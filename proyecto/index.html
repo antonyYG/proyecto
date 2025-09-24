@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Inflación Anual por País</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+      min-height: 100vh;
+      background: #f9f9f9;
+    }
+    #sidebar {
+      width: 280px;
+      background: #fff;
+      padding: 20px;
+      border-right: 1px solid #ddd;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    #sidebar h2 {
+      font-size: 18px;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    #controls label {
+      display: block;
+      margin: 10px 0 5px;
+      font-weight: bold;
+      color: #444;
+    }
+    #controls select,
+    #controls input,
+    #controls button {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    #controls select {
+      height: 160px;
+    }
+    #controls button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    #controls button:hover {
+      background: #0056b3;
+    }
+    #main {
+      flex-grow: 1;
+      padding: 30px;
+      position: relative;
+    }
+    canvas {
+      background: white;
+      border-radius: 10px;
+      padding: 15px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    #logoutBtn {
+      position: absolute;
+      right: 30px;
+      top: 30px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    #logoutBtn:hover {
+      background: #b91c1c;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sidebar con filtros -->
+  <div id="sidebar">
+    <h2>Filtros</h2>
+    <div id="controls">
+      <label>Selecciona países:</label>
+      <select id="countrySelect" multiple></select>
+
+      <label>Año mínimo:</label>
+      <input type="number" id="minYear">
+
+      <label>Año máximo:</label>
+      <input type="number" id="maxYear">
+
+      <button onclick="updateChart()">Actualizar</button>
+    </div>
+  </div>
+
+  <!-- Contenido principal -->
+  <div id="main">
+    <button id="logoutBtn">Cerrar sesión</button>
+    <h2>Inflación Anual por País</h2>
+    <canvas id="inflacionChart" width="900" height="500"></canvas>
+  </div>
+
+  <script>
+    // 🔐 Verificar login
+    (function(){
+      const logged = localStorage.getItem("loggedIn");
+      if (logged !== "true") {
+        window.location.href = "login.html";
+      }
+    })();
+
+    let dataAll = [];
+    let chart;
+
+    // 🔹 Cargar JSON externo
+    fetch("inflacion.json")
+      .then(response => response.json())
+      .then(data => {
+        dataAll = data;
+        initApp();
+      })
+      .catch(err => console.error("Error cargando inflacion.json:", err));
+
+    function initApp() {
+      // Lista única de países
+      const countries = [...new Set(dataAll.map(d => d["País"]))].sort();
+
+      // Poblar select
+      const select = document.getElementById("countrySelect");
+      countries.forEach(p => {
+        const option = document.createElement("option");
+        option.value = p;
+        option.textContent = p;
+        select.appendChild(option);
+      });
+
+      // Rango de años automático
+      const years = dataAll.map(d => +d["Año"]);
+      document.getElementById("minYear").value = Math.min(...years);
+      document.getElementById("maxYear").value = Math.max(...years);
+
+      // Inicializar gráfico
+      const ctx = document.getElementById("inflacionChart").getContext("2d");
+      chart = new Chart(ctx, {
+        type: "line",
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true,
+          interaction: { mode: 'nearest', axis: 'x', intersect: false },
+          plugins: { legend: { position: "bottom" } },
+          scales: {
+            x: { title: { display: true, text: "Año" } },
+            y: { title: { display: true, text: "Inflación Anual" } }
+          }
+        }
+      });
+
+      // Seleccionar primer país por defecto y dibujar
+      select.options[0].selected = true;
+      updateChart();
+    }
+
+    function updateChart() {
+      const select = document.getElementById("countrySelect");
+      const selected = Array.from(select.selectedOptions).map(opt => opt.value);
+      const minY = +document.getElementById("minYear").value;
+      const maxY = +document.getElementById("maxYear").value;
+
+      const datasets = [];
+      let labels = [];
+
+      selected.forEach((pais, i) => {
+        const datos = dataAll
+          .filter(d => d["País"] === pais && +d["Año"] >= minY && +d["Año"] <= maxY)
+          .sort((a,b) => +a["Año"] - +b["Año"]);
+
+        if (datos.length > 0) {
+          // Colores dinámicos con HSL
+          const hue = (i * 60) % 360;
+          const borderColor = `hsl(${hue}, 70%, 40%)`;
+          const backgroundColor = `hsl(${hue}, 70%, 70%, 0.3)`;
+
+          datasets.push({
+            label: pais,
+            data: datos.map(d => +d["Inflación Anual"]),
+            borderColor: borderColor,
+            backgroundColor: backgroundColor,
+            fill: true,
+            tension: 0.3,
+            pointRadius: 5
+          });
+
+          if (labels.length === 0) {
+            labels = datos.map(d => +d["Año"]);
+          }
+        }
+      });
+
+      chart.data.labels = labels;
+      chart.data.datasets = datasets;
+      chart.update();
+    }
+
+    // 🔻 Logout
+    document.getElementById("logoutBtn").addEventListener("click", function(){
+      localStorage.removeItem("loggedIn");
+      localStorage.removeItem("usuario");
+      window.location.href = "login.html";
+    });
+  </script>
+</body>
+</html>
